@@ -44,51 +44,58 @@ function clearPrev() {
 clearPrev();
 
 // Generate a non-colliding positional number "alphabet" using an input base and already used digits.
-function genA(base=10, used='', min=0) {
+function genA(base=10, used='') {
   let j = 0;
   let out = [];
   for(let i = 0; i < base; i++) {
     while(used.includes(j.toString(36))) j++;
     if (j >= 36) throw new RangeError("Went above 36 in genA "+base+','+used+','+min);
-    if(i>=min) out.push(j.toString(36));
+    out.push(j.toString(36));
     j++;
   }
   return out;
 }
 
 // Encode a non-colliding positional number using the base of the LSD
-function posNCE(input, base, length = null) {
+function posNCE(input, ibase, length = null) {
+  ibase = Math.abs(ibase) | 0;
+  let base = ibase;
+  if (base < 2) throw new RangeError("base must at least be 2");
+  if (length!=null && length > 37 - ibase) throw new RangeError("Too long!");
   let int = input;
   let int2 = [];
   while (int > 0) {
     int2.push([int % base,base]);
-    int = int / base | 0;
-    base=Math.min(36,base+1);
+    int = Math.floor(int / base);
+    if (int2.length > 37 - ibase) throw new RangeError("Hit length limit!");
+    base++;
   }
   if (length !== null) {
     while (int2.length < length) {
       int2.push([0, base]);
-      base = Math.min(36, base + 1);
+      base++;
     }
-  } else if (input == 0) int2.push(0, base);
+  } else if (input == 0) int2.push([0, base]);
   let output = '';
   while (int2.length > 0) {
     const v = int2.pop();
-    const o = genA(v[1], output, v[0])[0];
+    const o = genA(v[1], output)[v[0]];
     if(o==undefined) throw new RangeError("No digit options "+input+','+base+','+length);
     output += o;
   }
   return output;
 }
 
-function posNCD(input, base) {
+function posNCD(input, ibase) {
+  let base = ibase;
+  base = Math.abs(base) | 0;
   input = input.toLowerCase();
   let int = [];
   let output = 0;
   let mul = 1;
   for (let i = input.length-1; i >= 0; i--) {
-    const idx = genA(base, input.slice(0, i), 0).indexOf(input[i]);
-    if (idx==-1) throw new TypeError('String '+input+' does not represent an NC'+base);
+    const idx = genA(base, input.slice(0, i)).indexOf(input[i]);
+    if (idx==-1) throw new TypeError('String '+input+' is not an NC'+ibase);
     output += idx * mul;
     mul *= base;
     base++;
