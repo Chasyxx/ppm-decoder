@@ -90,6 +90,12 @@
         #history {
             margin: 0;
         }
+
+        @media (width < 50em) {
+            #rightbox {
+                display: none;
+            }
+        }
 </style>
         <script>const map = [
           5, 4, 6, 3, 7, 2, 17, 1, 8,
@@ -136,6 +142,59 @@
         }
         clearPrev();
 
+        // Generate a non-colliding positional number "alphabet" using an input base and already used digits.
+        function genA(base=10, used='', min=0) {
+          let j = 0;
+          let out = [];
+          for(let i = 0; i < base; i++) {
+            while(used.includes(j.toString(36))) j++;
+            if (j >= 36) throw new RangeError("Went above 36 in genA "+base+','+used+','+min);
+            if(i>=min) out.push(j.toString(36));
+            j++;
+          }
+          return out;
+        }
+
+        // Encode a non-colliding positional number using the base of the LSD
+        function posNCE(input, base, length = null) {
+          let int = input;
+          let int2 = [];
+          while (int > 0) {
+            int2.push([int % base,base]);
+            int = int / base | 0;
+            base=Math.min(36,base+1);
+          }
+          if (length !== null) {
+            while (int2.length < length) {
+              int2.push([0, base]);
+              base = Math.min(36, base + 1);
+            }
+          } else if (input == 0) int2.push(0, base);
+          let output = '';
+          while (int2.length > 0) {
+            const v = int2.pop();
+            const o = genA(v[1], output, v[0])[0];
+            if(o==undefined) throw new RangeError("No digit options "+input+','+base+','+length);
+            output += o;
+          }
+          return output;
+        }
+
+        function posNCD(input, base) {
+          input = input.toLowerCase();
+          let int = [];
+          let output = 0;
+          let mul = 1;
+          for (let i = input.length-1; i >= 0; i--) {
+            const idx = genA(base, input.slice(0, i), 0).indexOf(input[i]);
+            if (idx==-1) throw new TypeError('String '+input+' does not represent an NC'+base);
+            output += idx * mul;
+            mul *= base;
+            base++;
+          }
+          return output;
+        }
+
         async function main() {
           // const eFFTContainer = document.getElementById('fft-container');
           /** @type HTMLCanvasElement */
@@ -155,6 +214,7 @@
           const eCopy = document.getElementById('copyid');
           let row = 0;
           let timer = 0;
+          let timer2 = 0;
           let tick = 0;
           let tick2 = 0;
           let syncCounter = 0, hasSync = false;
@@ -224,7 +284,7 @@
             processor.port.addEventListener('message', function (e) {
               if (lastHeight !== eFFT.clientHeight) {
                 lastHeight = eFFT.clientHeight;
-                eFFT.height = eFFT.clientHeight/2;
+                eFFT.height = Math.max(1,eFFT.clientHeight/2);
                 row = 0;
               }
               const imagedata = ctx.getImageData(0, row, eFFT.width, 1);
@@ -235,7 +295,7 @@
                 const m = 1 / (max - min);
                 for (let options = 0; options < 18; options++) {
                   const o = (e.data[carrier * 18 + options] - min) * m;
-                  const o2 = Math.max(0, 1 - (1 - o) * 1.5);
+                  const o2 = Math.max(0, 1 - (1 - o) * 2);
                   e.data[carrier * 18 + options] = o;
                   patterns[map[carrier * 18 + options]] += e.data[carrier * 18 + options];
                   const i = (carrier * 21 + options) * 8;
@@ -255,7 +315,7 @@
               let pmin = Math.min(...patterns);
               const pm = 1 / (pmax - pmin);
               for (let pattern = 0; pattern < 18; pattern++) {
-                const o = Math.max(0, 1 - (1 - (patterns[pattern] - pmin) * pm) * 1.5);
+                const o = Math.max(0, 1 - (1 - (patterns[pattern] - pmin) * pm) * 1.1);
                 const i = (212 + pattern) * 8;
                 imagedata.data[i] = 255 - o*o*o * 255;
                 imagedata.data[i + 1] = 255 - o*o * 255;
@@ -270,11 +330,6 @@
               }
               ctx.putImageData(imagedata, 0, row);
               let symbol = patterns.indexOf(pmax);
-              if (timer < 1) {
-                row++
-                if (tick == 11&&hasSync) row++;
-                row = row % eFFT.height;
-              }
               if (symbol < 0) symbol = 0;
               if (timer < 1) {
                 let avoidPreSyncPrint = false;
@@ -335,21 +390,20 @@
                   }
                   if (majoritySymbols >= 10 && hasSync &&tick==11) {
                     lastFullMajorityDecode = majorityText;
-                    let idx0 = parseInt(majorityText[7], 16);
-                    let idx1 = parseInt(majorityText[8], 16);
-                    let idx2 = parseInt(majorityText[9], 16);
-                    let idx3 = parseInt(majorityText[10], 16);
-                    idx3 -= (idx3 > idx0) + (idx3 > idx1) + (idx3 > idx2);
-                    idx2 -= (idx2 > idx0) + (idx2 > idx1);
-                    idx1 -= (idx1 > idx0);
-                    let timeIndex = idx0 * 13 ** 3 + idx1 * 13 ** 2 + idx2 * 13 + idx3;
-                    const h = `<span class="g">ID ${majorityText.slice(0, 3) + majorityText.slice(4, 7)}<br>Time index ${timeIndex}</span>`;
+                    let timeIndex = 'invalid';
+                    try {
+                      timeIndex = posNCD(majorityText.slice(7, 11), 13);
+                    } catch (e) { console.warning(e); }
+                    const h = `<span class="${timeIndex=='invalid'?'y':'g'}">ID ${majorityText.slice(0, 3) + majorityText.slice(4, 7)}<br>Time index ${timeIndex}</span>`;
                     if(eStatus.innerHTML!==h) eStatus.innerHTML = h;
                     eCopy.disabled = false; // show button
                   }
                 }
                 eDecoder.innerHTML = rawHTML;
                 eDecoded.innerHTML = majorityHTML;
+                row++
+                if (tick == 11&&hasSync) row++;
+                row = row % eFFT.height;
                 tick = (tick + 1) % 12;
                 tick2++;
               }
@@ -474,12 +528,12 @@ class goertzelProc extends AudioWorkletProcessor {
 
 registerProcessor("audioProcessor", goertzelProc);
 </script>
-        <title>Nielsen PPM decoder 1.4</title>
+        <title>Nielsen PPM decoder 1.4.2 (packed)</title>
     </head>
     <body>
         <!--<div id="help-container">-->
         <dialog id="help" closedby="any">
-            <h1>Nielsen PPM CBET decoder 1.4</h1>
+            <h1>Nielsen PPM CBET decoder 1.4.2 (packed)</h1>
             <button id="start">Open a mic and start</button>
             <hr>
             <p>Nielsen PPM is a "hidden" identifier that can be embedded in a sound signal.
@@ -519,7 +573,7 @@ registerProcessor("audioProcessor", goertzelProc);
                 <ul id="history" aria-label="Decode history"></ul>
             </div>
             <div id="rightbox">
-                <label for="fft" class="sml">MFSK demods</label>
+                <label for="fft" class="sml">MFSK demods (FFT bins)</label>
                 <div id="fft-container">
                     <canvas id="fft" width="459" height="209" title="Frequency detector outputs">Your browser does not support canvases.</canvas>
                 </div>

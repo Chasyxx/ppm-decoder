@@ -48,32 +48,50 @@ function genA(base=10, used='', min=0) {
   let j = 0;
   let out = [];
   for(let i = 0; i < base; i++) {
-        while(used.includes(j.toString(36))) j++;
+    while(used.includes(j.toString(36))) j++;
+    if (j >= 36) throw new RangeError("Went above 36 in genA "+base+','+used+','+min);
     if(i>=min) out.push(j.toString(36));
     j++;
   }
   return out;
 }
 
-// Encode a non-colliding positional number.
-function posNCE(input, base) {
+// Encode a non-colliding positional number using the base of the LSD
+function posNCE(input, base, length = null) {
+  let int = input;
+  let int2 = [];
+  while (int > 0) {
+    int2.push([int % base,base]);
+    int = int / base | 0;
+    base=Math.min(36,base+1);
+  }
+  if (length !== null) {
+    while (int2.length < length) {
+      int2.push([0, base]);
+      base = Math.min(36, base + 1);
+    }
+  } else if (input == 0) int2.push(0, base);
   let output = '';
-  const length = input<1?1:Math.floor(Math.log(input) / Math.log(base))+1;
-  for (let i = 0; i < length; i++) {
-    const v = input / base**(length-1-i)%base|0;
-    output += genA(base, output, v)[0];
-    // input = input / base | 0;
+  while (int2.length > 0) {
+    const v = int2.pop();
+    const o = genA(v[1], output, v[0])[0];
+    if(o==undefined) throw new RangeError("No digit options "+input+','+base+','+length);
+    output += o;
   }
   return output;
 }
 
 function posNCD(input, base) {
   input = input.toLowerCase();
+  let int = [];
   let output = 0;
-  for (let i = 0; i < input.length; i++) {
+  let mul = 1;
+  for (let i = input.length-1; i >= 0; i--) {
     const idx = genA(base, input.slice(0, i), 0).indexOf(input[i]);
-    if (idx==-1) throw new TypeError('String does not represent an NCPN');
-    output = output * base + idx;
+    if (idx==-1) throw new TypeError('String '+input+' does not represent an NC'+base);
+    output += idx * mul;
+    mul *= base;
+    base++;
   }
   return output;
 }
@@ -97,6 +115,7 @@ async function main() {
   const eCopy = document.getElementById('copyid');
   let row = 0;
   let timer = 0;
+  let timer2 = 0;
   let tick = 0;
   let tick2 = 0;
   let syncCounter = 0, hasSync = false;
@@ -168,7 +187,7 @@ async function main() {
     processor.port.addEventListener('message', function (e) {
       if (lastHeight !== eFFT.clientHeight) {
         lastHeight = eFFT.clientHeight;
-        eFFT.height = eFFT.clientHeight/2;
+        eFFT.height = Math.max(1,eFFT.clientHeight/2);
         row = 0;
       }
       const imagedata = ctx.getImageData(0, row, eFFT.width, 1);
@@ -179,7 +198,7 @@ async function main() {
         const m = 1 / (max - min);
         for (let options = 0; options < 18; options++) {
           const o = (e.data[carrier * 18 + options] - min) * m;
-          const o2 = Math.max(0, 1 - (1 - o) * 1.5);
+          const o2 = Math.max(0, 1 - (1 - o) * 2);
           e.data[carrier * 18 + options] = o;
           patterns[map[carrier * 18 + options]] += e.data[carrier * 18 + options];
           const i = (carrier * 21 + options) * 8;
@@ -199,7 +218,7 @@ async function main() {
       let pmin = Math.min(...patterns);
       const pm = 1 / (pmax - pmin);
       for (let pattern = 0; pattern < 18; pattern++) {
-        const o = Math.max(0, 1 - (1 - (patterns[pattern] - pmin) * pm) * 1.5);
+        const o = Math.max(0, 1 - (1 - (patterns[pattern] - pmin) * pm) * 1.1);
         const i = (212 + pattern) * 8;
         imagedata.data[i] = 255 - o*o*o * 255;
         imagedata.data[i + 1] = 255 - o*o * 255;
@@ -214,11 +233,6 @@ async function main() {
       }
       ctx.putImageData(imagedata, 0, row);
       let symbol = patterns.indexOf(pmax);
-      if (timer < 1) {
-        row++
-        if (tick == 11&&hasSync) row++;
-        row = row % eFFT.height;
-      }
       if (symbol < 0) symbol = 0;
       if (timer < 1) {
         let avoidPreSyncPrint = false;
@@ -290,6 +304,9 @@ async function main() {
         }
         eDecoder.innerHTML = rawHTML;
         eDecoded.innerHTML = majorityHTML;
+        row++
+        if (tick == 11&&hasSync) row++;
+        row = row % eFFT.height;
         tick = (tick + 1) % 12;
         tick2++;
       }

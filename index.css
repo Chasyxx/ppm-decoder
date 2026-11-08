@@ -87,3 +87,9 @@ dialog {
 #history {
     margin: 0;
 }
+
+@media (width < 50em) {
+    #rightbox {
+        display: none;
+    }
+}
