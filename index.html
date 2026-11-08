@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <link rel="stylesheet" href="./index.css" />
+        <script src="./index.js"></script>
+        <title>Nielsen PPM decoder 1.4</title>
+    </head>
+    <body>
+        <!--<div id="help-container">-->
+        <dialog id="help" closedby="any">
+            <h1>Nielsen PPM CBET decoder 1.4</h1>
+            <button id="start">Open a mic and start</button>
+            <hr>
+            <p>Nielsen PPM is a "hidden" identifier that can be embedded in a sound signal.
+                One modulation method, CBET <a href="https://www.sigidwiki.com/wiki/CBET">(CBET on SIGID wiki)</a> (which could stand for "Critical Band Encoded Telemetry"?) goes from 1-3 kHz
+                using 10 MFSK subcarriers and encoding 18 different 400ms long symbols across all of them.
+                It'is used on FM and MW AM radio, and it tries to be strong enough to decode, while quiet enough to not affect casual listening.
+                2 symbols (<b>[</b> and <b>]</b>) are used for sync while the other 16 act as hexadecimal digits for a station ID and time code.</p>
+            <p>This is a PPM CBET decoder that seems to work.
+                It uses an FFT to decode the symbols, syncronises the signal, and gives you the decoded ID and time code.</p>
+            <p>Press the button to start decoding.
+                You could open your actual mic and put your radio next to it,
+                but if you can use line in, or a virtual cable (SDR purposes),
+                use that instead since you'll get a cleaner decode.
+            </p>
+            <footer><em>Generative AI was not used in the creation of this page.</em> I just like actually writing properly.<br>Copyright 2026 Chase T. Licensed under the BSD 3-clause license.
+            <details><summary>The BSD 3-clause license</summary><article>
+                <p>Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:</p>
+                <ol><li>Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.</li>
+                <li>2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.</li>
+                <li>3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.</li></ol>
+                <p>THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.</p></article></details></footer>
+            <noscript><strong>JavaScript is needed for this to work.</strong></noscript>
+        </dialog>
+        <!--</div>-->
+
+        <div id="main">
+            <div id="sidebar">
+                <button id="showhelp">Help</button><button id="copyid" disabled>Copy ID</button>
+                <hr>
+                <label for="tvtoggle" class="sml">Frequency offset</label>
+                <input id="tvtoggle" class="smld" type="number" value="0" title="Frequency offset. Meant to be used to decode TV CBET (if that even works or exists)."/>
+                <hr>
+                <label for="status" class="sml">Decode status</label><output id="status" class="smld">...</output>
+                <label for="decoder" class="sml">Raw decode</label><output id="decoder" class="smld" title="Raw decode">...</output>
+                <label for="decoded" class="sml">Symbol majority</label><output id="decoded" class="smld" title="Symbol majority">...</output>
+                <label for="history" class="sml">Decode history (top is first)</label>
+                <ul id="history" aria-label="Decode history"></ul>
+            </div>
+            <div id="rightbox">
+                <label for="fft" class="sml">MFSK demods</label>
+                <div id="fft-container">
+                    <canvas id="fft" width="459" height="209" title="Frequency detector outputs">Your browser does not support canvases.</canvas>
+                </div>
+            </div>
+        </div>
+
+        <!--<input id="tvtoggle" type="checkbox" title="TV PPM has a frequency offset compared to radio. Tick this to account for that." />-->
+        <!--<select id="preference" title="How the individual frequency detectors should combine to create the pattern detrctor.">
+            <option value="toneresistance" title="Normalise before combining. More resistant to background tones, but can't deal with coupling as well.">Tone resistance</option>
+            <option selected value="couplingresistance" title="Combine before normalising. More resistant to coupling differences between the 10 sub-carriers, but can't handle background tones as well.">Coupling resistance</option>
+        </select><label>Pattern combination (Tone/Coupling resistance)</label>
+        <br />-->
+    </body>
+</html>

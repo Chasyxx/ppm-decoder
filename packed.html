@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <style>body {
+            font-family: sans-serif;
+            font-size: 1.3em;
+            color: oklch(0.9705 0.017 228.07);
+            background-color: oklch(0.15 0.0291 228.07);
+            margin: 8px;
+            height: calc(100vh - 16px);
+        }
+
+        output {
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        #fft-container {
+            width: max-content;
+            flex-grow: 1;
+        }
+
+        #fft {
+            width: 459px;
+            height: 100%;
+        }
+
+        #rightbox {
+            width: max-content;
+            display: flex;
+            flex-direction: column;
+        }
+
+        footer {
+            font-size: 0.5em;
+            color: oklch(0.773 0.0291 228.07);
+        }
+
+        .r {
+            color: oklch(0.7941 0.127 2.11);
+        }
+
+        .y {
+            color: oklch(0.9352 0.1158 97.74);
+        }
+
+        .g {
+            color: oklch(0.9235 0.1224 158.64);
+        }
+
+        dialog {
+            position: fixed;
+            inset: 0px;
+            max-width: 70vw;
+            max-height: 70vh;
+            margin: auto;
+            color: oklch(0.9705 0.017 136.2);
+            background-color: oklch(0.15 0.0291 141.54);
+            border: 4px solid oklch(0.9705 0.017 136.2);
+            overflow-y: scroll;
+        }
+
+        .sml {
+            display: block;
+            font-size: 0.5em;
+        }
+        .smld {
+            display: block;
+            margin-bottom: 1em;
+        }
+
+        #sidebar {
+            overflow: scroll;
+            flex-grow: 1;
+        }
+
+        /*#main {
+            display: grid;
+            background-color: blue;
+            grid-template-rows: 100%;
+            grid-template-columns: 1fr max-content;
+        }*/
+
+        #main {
+            display: flex;
+            flex-direction: row;
+            align-items: stretch;
+            height: 100%;
+        }
+
+        #history {
+            margin: 0;
+        }
+</style>
+        <script>const map = [
+          5, 4, 6, 3, 7, 2, 17, 1, 8,
+          0, 9, 16, 10, 15, 11, 14, 12, 13,
+
+          7, 6, 17, 5, 8, 4, 9, 3, 10,
+          2, 11, 1, 12, 0, 13, 16, 14, 15,
+
+          0, 16, 1, 15, 2, 14, 3, 13, 4,
+          12, 5, 11, 6, 10, 7, 9, 17, 8,
+
+          17, 7, 8, 6, 9, 5, 10, 4, 11,
+          3, 12, 2, 13, 1, 14, 0, 15, 16,
+
+          6, 13, 7, 4, 17, 3, 8, 2, 9,
+          1, 10, 0, 11, 16, 12, 15, 5, 14,
+
+          4, 2, 13, 1, 5, 0, 6, 16, 7,
+          15, 17, 14, 8, 3, 9, 12, 10, 11,
+
+          1, 0, 2, 16, 3, 15, 4, 14, 5,
+          13, 6, 12, 7, 11, 17, 10, 8, 9,
+
+          8, 17, 14, 7, 10, 13, 11, 5, 12,
+          9, 16, 3, 15, 2, 6, 1, 4, 0,
+
+          2, 1, 3, 0, 4, 16, 13, 15, 6,
+          14, 7, 5, 17, 12, 8, 11, 9, 10,
+
+          4, 3, 5, 2, 6, 1, 7, 17, 0,
+          16, 8, 15, 9, 14, 10, 13, 11, 12
+        ];
+
+        const map2 = [
+          '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', '[', ']', '-'
+        ];
+
+        let lastSymbol = 0;
+        let decoded = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let prev;
+
+        function clearPrev() {
+          prev = Array(5).fill(0).map((_,i1) => Array(12).fill(0).map((_, i2)=>(i1+i2)%16));
+        }
+        clearPrev();
+
+        async function main() {
+          // const eFFTContainer = document.getElementById('fft-container');
+          /** @type HTMLCanvasElement */
+          const eFFT = document.getElementById('fft');
+          const ctx = eFFT.getContext('2d');
+          /** @type HTMLSelectElement */
+          // const ePreference = document.getElementById('preference');
+          /** @type HTMLInputElement */
+          const eTVToggle = document.getElementById('tvtoggle');
+          /** @type HTMLDialogElement */
+          const eHelp = document.getElementById('help');
+          const eStart = document.getElementById('start');
+          const eStatus = document.getElementById('status');
+          const eDecoder = document.getElementById('decoder');
+          const eDecoded = document.getElementById('decoded');
+          const eHistory = document.getElementById('history');
+          const eCopy = document.getElementById('copyid');
+          let row = 0;
+          let timer = 0;
+          let tick = 0;
+          let tick2 = 0;
+          let syncCounter = 0, hasSync = false;
+          let lastFullMajorityDecode = null;
+          let lastHeight = 0;
+
+          eCopy.addEventListener('click', function () {
+            if (lastFullMajorityDecode == null) return;
+            try {
+              navigator.clipboard.writeText(lastFullMajorityDecode.slice(0, 3) + lastFullMajorityDecode.slice(4, 7));
+              eCopy.innerText = "Copied!";
+            } catch (e) {
+              console.error('e');
+              eCopy.innerText = "Failed to copy!";
+            } finally {
+              setTimeout(function () {
+                eCopy.innerText = "Copy ID";
+              }, 2000);
+            }
+          });
+
+          function addRow(text) {
+            const li = document.createElement('li');
+            const liO = document.createElement('output');
+            liO.innerText = text;
+            li.appendChild(liO);
+            eHistory.prepend(li);
+            while (eHistory.children.length > 10) {
+              eHistory.removeChild(eHistory.children.item(eHistory.children.length - 1));
+            }
+          }
+          eStart.addEventListener('click', function () {
+            eHelp.close();
+          });
+          document.getElementById('showhelp').addEventListener('click', function () {
+            eHelp.show();
+          });
+          eHelp.show();
+          eHelp.addEventListener('close', async function () {
+            eStart.innerText = "Close";
+            const audioContext = new AudioContext({
+              sampleRate: 12000,
+            });
+            try {
+              const workletBlob = new Blob([document.getElementById('processor-code').textContent]);
+              await audioContext.audioWorklet.addModule(URL.createObjectURL(workletBlob));
+            } catch (e) {
+              console.error(e);
+              eStatus.innerText = "Failed to load worklet. The packed version doesn't work on Chromium, only Firefox";
+              return;
+            }
+            const processor = new AudioWorkletNode(
+              audioContext,
+              "audioProcessor",
+            );
+            const micStream = await navigator.mediaDevices.getUserMedia({
+          		audio: {
+          			echoCancellation: false,
+          			noiseSuppression: false,
+                autoGainControl: false,
+                sampleRate: 12000
+          		},
+          		video: false
+            });
+            const micNode = audioContext.createMediaStreamSource(micStream);
+            micNode.connect(processor);
+            processor.port.addEventListener('message', function (e) {
+              if (lastHeight !== eFFT.clientHeight) {
+                lastHeight = eFFT.clientHeight;
+                eFFT.height = eFFT.clientHeight/2;
+                row = 0;
+              }
+              const imagedata = ctx.getImageData(0, row, eFFT.width, 1);
+              let patterns = Array(18).fill(0);
+              for (let carrier = 0; carrier < 10; carrier++) {
+                let max = Math.max(...e.data.slice(carrier * 18, carrier * 18 + 18));
+                let min = Math.min(...e.data.slice(carrier * 18, carrier * 18 + 18));
+                const m = 1 / (max - min);
+                for (let options = 0; options < 18; options++) {
+                  const o = (e.data[carrier * 18 + options] - min) * m;
+                  const o2 = Math.max(0, 1 - (1 - o) * 1.5);
+                  e.data[carrier * 18 + options] = o;
+                  patterns[map[carrier * 18 + options]] += e.data[carrier * 18 + options];
+                  const i = (carrier * 21 + options) * 8;
+                  imagedata.data[i] = o2*o2*o2 * 255;
+                  imagedata.data[i + 1] = o2*o2 * 255;
+                  imagedata.data[i + 2] = o2 * 255;
+                  imagedata.data[i + 3] = 255;
+                  if (options < 17) {
+                    imagedata.data[i + 4] = 0;
+                    imagedata.data[i + 5] = 0;
+                    imagedata.data[i + 6] = 0;
+                    imagedata.data[i + 7] = 255;
+                  }
+                }
+              }
+              let pmax = Math.max(...patterns);
+              let pmin = Math.min(...patterns);
+              const pm = 1 / (pmax - pmin);
+              for (let pattern = 0; pattern < 18; pattern++) {
+                const o = Math.max(0, 1 - (1 - (patterns[pattern] - pmin) * pm) * 1.5);
+                const i = (212 + pattern) * 8;
+                imagedata.data[i] = 255 - o*o*o * 255;
+                imagedata.data[i + 1] = 255 - o*o * 255;
+                imagedata.data[i + 2] = 255 - o * 255;
+                imagedata.data[i + 3] = 255;
+                if (pattern < 17) {
+                  imagedata.data[i + 4] = 255;
+                  imagedata.data[i + 5] = 255;
+                  imagedata.data[i + 6] = 255;
+                  imagedata.data[i + 7] = 255;
+                }
+              }
+              ctx.putImageData(imagedata, 0, row);
+              let symbol = patterns.indexOf(pmax);
+              if (timer < 1) {
+                row++
+                if (tick == 11&&hasSync) row++;
+                row = row % eFFT.height;
+              }
+              if (symbol < 0) symbol = 0;
+              if (timer < 1) {
+                let avoidPreSyncPrint = false;
+                if (symbol === 16) {
+                  if (tick === 3) syncCounter++;
+                  tick2 = 0;
+                }
+                else if (symbol == 17) {
+                  if (tick2 == 8) {
+                    if (tick < 10 || !hasSync) {
+                      if (lastFullMajorityDecode == null) eStatus.innerText = "Got sync...";
+                      clearPrev();
+                      while (eHistory.children.length > 0) {
+                        eHistory.removeChild(eHistory.children.item(eHistory.children.length - 1));
+                      }
+                      addRow('( Got sync )', map);
+                      row++;
+                      avoidPreSyncPrint = true;
+                    }
+                    tick = 11;
+                    syncCounter = 4;
+                    hasSync = true;
+                  } else if (tick === 11) syncCounter++;
+                }
+                decoded[tick] = symbol;
+                if (tick >= 11) {
+                  if(!avoidPreSyncPrint) {
+                    prev.pop();
+                    prev.unshift(decoded.slice());
+                    addRow(decoded.map(x => map2[x]).join(''));
+                  }
+                  if (--syncCounter <= 0 && hasSync) {
+                    hasSync = false;
+                    if(lastFullMajorityDecode==null) eStatus.innerText = "Lost sync...";
+                    addRow('( Lost sync )', map);
+                  }
+                }
+                let rawHTML = '';
+                let majorityHTML = '';
+                let majorityText = '';
+                let majoritySymbols = 0;
+                for (let i1 = 0; i1 < 12; i1++) {
+                  let patterns = Array(18).fill(0);
+                  for (let i2 = 0; i2 < 5; i2++) {
+                    patterns[prev[i2][i1]]++;
+                  }
+                  const cur = i1 == (tick+1)%12 ? 'b' : 'span';
+                  let pmax = Math.max(...patterns);
+                  if (pmax < 3) {
+                    rawHTML += `<${cur} class="r">${map2[decoded[i1]]}</${cur}>`;
+                    majorityText += map2[decoded[i1]];
+                    majorityHTML += '<b class="r">?</b>';
+                  } else {
+                    if (i1 != 3 && i1 != 11) majoritySymbols++;
+                    rawHTML += `<${cur} class="${decoded[i1]==patterns.indexOf(pmax)?"g":"y"}">${map2[decoded[i1]]}</${cur}>`;
+                    majorityText += map2[patterns.indexOf(pmax)];
+                    majorityHTML += `<b class="g">${map2[patterns.indexOf(pmax)]}</b>`;
+                  }
+                  if (majoritySymbols >= 10 && hasSync &&tick==11) {
+                    lastFullMajorityDecode = majorityText;
+                    let idx0 = parseInt(majorityText[7], 16);
+                    let idx1 = parseInt(majorityText[8], 16);
+                    let idx2 = parseInt(majorityText[9], 16);
+                    let idx3 = parseInt(majorityText[10], 16);
+                    idx3 -= (idx3 > idx0) + (idx3 > idx1) + (idx3 > idx2);
+                    idx2 -= (idx2 > idx0) + (idx2 > idx1);
+                    idx1 -= (idx1 > idx0);
+                    let timeIndex = idx0 * 13 ** 3 + idx1 * 13 ** 2 + idx2 * 13 + idx3;
+                    const h = `<span class="g">ID ${majorityText.slice(0, 3) + majorityText.slice(4, 7)}<br>Time index ${timeIndex}</span>`;
+                    if(eStatus.innerHTML!==h) eStatus.innerHTML = h;
+                    eCopy.disabled = false; // show button
+                  }
+                }
+                eDecoder.innerHTML = rawHTML;
+                eDecoded.innerHTML = majorityHTML;
+                tick = (tick + 1) % 12;
+                tick2++;
+              }
+              if (lastSymbol !== symbol) {
+                timer = (timer - 4) * 0.9 + 4;
+              }
+              timer = (timer + 1) % 8;
+              lastSymbol = symbol;
+              // console.log(map2[]);
+            });
+            eTVToggle.addEventListener('change', function () {
+              // processor.port.postMessage({ 'tvToggle': eTVToggle.checked });
+              processor.port.postMessage({ 'tvToggle': +eTVToggle.value });
+            });
+            processor.port.start();
+            // const osc = audioContext.createOscillator();
+            // osc.type = 'sine';
+            // osc.frequency.setValueAtTime(1000, audioContext.currentTime);
+            // osc.connect(processor);
+            // osc.start();
+            processor.connect(audioContext.destination);
+            eStatus.innerText = "Looking for sync...";
+            audioContext.resume();
+          }, { once: true });
+
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', main);
+        } else main();
+</script>
+<script type="text" id="processor-code">const freqs = [
+  1000.2, 1004.1, 1008.0, 1011.9, 1015.8, 1019.7, 1023.6, 1027.5, 1031.4,
+  1035.3, 1039.2, 1043.1, 1047.0, 1050.9, 1054.8, 1058.7, 1062.6, 1066.5,
+
+  1191.6, 1195.5, 1199.4, 1203.3, 1207.2, 1211.1, 1215.0, 1218.9, 1222.8,
+  1226.7, 1230.6, 1234.5, 1238.4, 1242.3, 1246.2, 1250.1, 1254.0, 1257.9,
+
+  1382.8, 1386.7, 1390.6, 1394.5, 1398.4, 1402.3, 1406.2, 1410.1, 1414.0,
+  1417.9, 1421.8, 1425.7, 1429.6, 1433.5, 1437.4, 1441.3, 1445.2, 1449.1,
+
+  1574.4, 1578.3, 1582.2, 1586.1, 1590.0, 1593.9, 1597.8, 1601.7, 1605.6,
+  1609.5, 1613.4, 1617.3, 1621.2, 1625.1, 1629.0, 1632.9, 1636.8, 1640.7,
+
+  1765.8, 1769.7, 1773.6, 1777.5, 1781.4, 1785.3, 1789.2, 1793.1, 1797.0,
+  1800.9, 1804.8, 1808.7, 1812.6, 1816.5, 1820.4, 1824.3, 1828.2, 1832.1,
+
+  1957.2, 1961.1, 1965.0, 1968.9, 1972.8, 1976.7, 1980.6, 1984.5, 1988.4,
+  1992.3, 1996.2, 2000.1, 2004.0, 2007.9, 2011.8, 2015.7, 2019.6, 2023.5,
+
+  2160.2, 2164.1, 2168.0, 2171.9, 2175.8, 2179.7, 2183.6, 2187.5, 2191.4,
+  2195.3, 2199.2, 2203.1, 2207.0, 2210.9, 2214.8, 2218.7, 2222.6, 2226.5,
+
+  2375.1, 2379.0, 2382.9, 2386.8, 2390.7, 2394.6, 2398.5, 2402.4, 2406.3,
+  2410.2, 2414.1, 2418.0, 2421.9, 2425.8, 2429.7, 2433.6, 2437.5, 2441.4,
+
+  2593.9, 2597.8, 2601.7, 2605.6, 2609.5, 2613.4, 2617.3, 2621.2, 2625.1,
+  2629.0, 2632.9, 2636.8, 2640.7, 2644.6, 2648.5, 2652.4, 2656.3, 2660.2,
+
+  2816.5, 2820.4, 2824.3, 2828.2, 2832.1, 2836.0, 2839.9, 2843.8, 2847.7,
+  2851.6, 2855.5, 2859.4, 2863.3, 2867.2, 2871.1, 2875.0, 2878.9, 2882.8
+]
+
+function FFTC(I,O,le,m=-1,os=0,is=0,s=1){
+    if (le<2) return O[os] = I[is];
+    FFTC(I,O,le/2,m,os,is,s*2);
+    FFTC(I,O,le/2,m,os+le/2,is+s,s*2);
+    for(let k = 0; k < le/2; k++) {
+        const p = O[os+k];
+        const t = k/le*Math.PI*2*m;
+        const q1 = O[os+k+le/2];
+        const q = [q1[0]*Math.cos(t)-q1[1]*Math.sin(t),q1[0]*Math.sin(t)+q1[1]*Math.cos(t)];
+        O[os+k] = [p[0]+q[0],p[1]+q[1]];
+        O[os+k+le/2] = [p[0]-q[0],p[1]-q[1]];
+    }
+}
+
+class goertzelProc extends AudioWorkletProcessor {
+  constructor(...a) {
+    super(...a);
+    this.inBuf = Array(this.bufLen = 4096).fill(0);
+    this.fftIn = Array(this.bufLen).fill(0).map(x=>[0,0]);
+    this.fftOut = Array(this.bufLen);
+    this.preHann = Array(this.bufLen).fill(0).map((_,i)=>Math.sin(i/this.bufLen*Math.PI)**2);
+    this.bufIdx = 0;
+    this.timer = 0;
+    this.tvToggle = 0;
+
+    this.port.addEventListener('message', (/** @type MessageEvent */e)=>{
+      // console.log(e.data,e.data.hasOwnProperty('tvToggle'),e.data.tvToggle);
+      if (e.data.hasOwnProperty('tvToggle')) {
+        this.tvToggle = e.data.tvToggle;
+      }
+    });
+    this.port.start();
+  }
+  process(inputs, outputs, _parameters) {
+    const input = (inputs[0] ?? [])[0] ?? null;
+    if (input == null) return true;
+    for (let i1 = 0; i1 < input.length; i1++) {
+      this.inBuf[this.bufIdx] = input[i1];
+      // for (let ch = 0; ch < outputs[0].length; ch++) outputs[0][ch][i1] = input[i1];
+      this.bufIdx = (this.bufIdx + 1) % this.bufLen;
+      this.timer++;
+      if (this.timer >= 600) {
+
+        this.timer = 0;
+        for (let i2 = 0; i2 < this.bufLen; i2++) {
+          this.fftIn[i2][0] = this.inBuf[(i2 + this.bufIdx) % this.bufLen] * this.preHann[i2];
+        }
+        FFTC(this.fftIn, this.fftOut, this.bufLen);
+        const bins = freqs.map(hz => {
+          if(this.tvToggle) hz += this.tvToggle;
+          const FFTIndex = Math.round(hz / 12000 * this.bufLen);
+          return Math.sqrt(this.fftOut[FFTIndex][0] ** 2 + this.fftOut[FFTIndex][1] ** 2);
+        });
+        this.port.postMessage(bins);
+      }
+    }
+    return true;
+  }
+}
+
+registerProcessor("audioProcessor", goertzelProc);
+</script>
+        <title>Nielsen PPM decoder 1.4</title>
+    </head>
+    <body>
+        <!--<div id="help-container">-->
+        <dialog id="help" closedby="any">
+            <h1>Nielsen PPM CBET decoder 1.4</h1>
+            <button id="start">Open a mic and start</button>
+            <hr>
+            <p>Nielsen PPM is a "hidden" identifier that can be embedded in a sound signal.
+                One modulation method, CBET <a href="https://www.sigidwiki.com/wiki/CBET">(CBET on SIGID wiki)</a> (which could stand for "Critical Band Encoded Telemetry"?) goes from 1-3 kHz
+                using 10 MFSK subcarriers and encoding 18 different 400ms long symbols across all of them.
+                It'is used on FM and MW AM radio, and it tries to be strong enough to decode, while quiet enough to not affect casual listening.
+                2 symbols (<b>[</b> and <b>]</b>) are used for sync while the other 16 act as hexadecimal digits for a station ID and time code.</p>
+            <p>This is a PPM CBET decoder that seems to work.
+                It uses an FFT to decode the symbols, syncronises the signal, and gives you the decoded ID and time code.</p>
+            <p>Press the button to start decoding.
+                You could open your actual mic and put your radio next to it,
+                but if you can use line in, or a virtual cable (SDR purposes),
+                use that instead since you'll get a cleaner decode.
+            </p>
+            <footer><em>Generative AI was not used in the creation of this page.</em> I just like actually writing properly.<br>Copyright 2026 Chase T. Licensed under the BSD 3-clause license.
+            <details><summary>The BSD 3-clause license</summary><article>
+                <p>Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:</p>
+                <ol><li>Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.</li>
+                <li>2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.</li>
+                <li>3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.</li></ol>
+                <p>THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.</p></article></details></footer>
+            <noscript><strong>JavaScript is needed for this to work.</strong></noscript>
+        </dialog>
+        <!--</div>-->
+
+        <div id="main">
+            <div id="sidebar">
+                <button id="showhelp">Help</button><button id="copyid" disabled>Copy ID</button>
+                <hr>
+                <label for="tvtoggle" class="sml">Frequency offset</label>
+                <input id="tvtoggle" class="smld" type="number" value="0" title="Frequency offset. Meant to be used to decode TV CBET (if that even works or exists)."/>
+                <hr>
+                <label for="status" class="sml">Decode status</label><output id="status" class="smld">...</output>
+                <label for="decoder" class="sml">Raw decode</label><output id="decoder" class="smld" title="Raw decode">...</output>
+                <label for="decoded" class="sml">Symbol majority</label><output id="decoded" class="smld" title="Symbol majority">...</output>
+                <label for="history" class="sml">Decode history (top is first)</label>
+                <ul id="history" aria-label="Decode history"></ul>
+            </div>
+            <div id="rightbox">
+                <label for="fft" class="sml">MFSK demods</label>
+                <div id="fft-container">
+                    <canvas id="fft" width="459" height="209" title="Frequency detector outputs">Your browser does not support canvases.</canvas>
+                </div>
+            </div>
+        </div>
+
+        <!--<input id="tvtoggle" type="checkbox" title="TV PPM has a frequency offset compared to radio. Tick this to account for that." />-->
+        <!--<select id="preference" title="How the individual frequency detectors should combine to create the pattern detrctor.">
+            <option value="toneresistance" title="Normalise before combining. More resistant to background tones, but can't deal with coupling as well.">Tone resistance</option>
+            <option selected value="couplingresistance" title="Combine before normalising. More resistant to coupling differences between the 10 sub-carriers, but can't handle background tones as well.">Coupling resistance</option>
+        </select><label>Pattern combination (Tone/Coupling resistance)</label>
+        <br />-->
+    </body>
+</html>
