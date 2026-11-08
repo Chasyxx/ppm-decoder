@@ -43,6 +43,41 @@ function clearPrev() {
 }
 clearPrev();
 
+// Generate a non-colliding positional number "alphabet" using an input base and already used digits.
+function genA(base=10, used='', min=0) {
+  let j = 0;
+  let out = [];
+  for(let i = 0; i < base; i++) {
+        while(used.includes(j.toString(36))) j++;
+    if(i>=min) out.push(j.toString(36));
+    j++;
+  }
+  return out;
+}
+
+// Encode a non-colliding positional number.
+function posNCE(input, base) {
+  let output = '';
+  const length = input<1?1:Math.floor(Math.log(input) / Math.log(base))+1;
+  for (let i = 0; i < length; i++) {
+    const v = input / base**(length-1-i)%base|0;
+    output += genA(base, output, v)[0];
+    // input = input / base | 0;
+  }
+  return output;
+}
+
+function posNCD(input, base) {
+  input = input.toLowerCase();
+  let output = 0;
+  for (let i = 0; i < input.length; i++) {
+    const idx = genA(base, input.slice(0, i), 0).indexOf(input[i]);
+    if (idx==-1) throw new TypeError('String does not represent an NCPN');
+    output = output * base + idx;
+  }
+  return output;
+}
+
 async function main() {
   // const eFFTContainer = document.getElementById('fft-container');
   /** @type HTMLCanvasElement */
@@ -244,15 +279,11 @@ async function main() {
           }
           if (majoritySymbols >= 10 && hasSync &&tick==11) {
             lastFullMajorityDecode = majorityText;
-            let idx0 = parseInt(majorityText[7], 16);
-            let idx1 = parseInt(majorityText[8], 16);
-            let idx2 = parseInt(majorityText[9], 16);
-            let idx3 = parseInt(majorityText[10], 16);
-            idx3 -= (idx3 > idx0) + (idx3 > idx1) + (idx3 > idx2);
-            idx2 -= (idx2 > idx0) + (idx2 > idx1);
-            idx1 -= (idx1 > idx0);
-            let timeIndex = idx0 * 13 ** 3 + idx1 * 13 ** 2 + idx2 * 13 + idx3;
-            const h = `<span class="g">ID ${majorityText.slice(0, 3) + majorityText.slice(4, 7)}<br>Time index ${timeIndex}</span>`;
+            let timeIndex = 'invalid';
+            try {
+              timeIndex = posNCD(majorityText.slice(7, 11), 13);
+            } catch (e) { console.warning(e); }
+            const h = `<span class="${timeIndex=='invalid'?'y':'g'}">ID ${majorityText.slice(0, 3) + majorityText.slice(4, 7)}<br>Time index ${timeIndex}</span>`;
             if(eStatus.innerHTML!==h) eStatus.innerHTML = h;
             eCopy.disabled = false; // show button
           }
