@@ -49,7 +49,7 @@ function genA(base=10, used='') {
   let out = [];
   for(let i = 0; i < base; i++) {
     while(used.includes(j.toString(36))) j++;
-    if (j >= 36) throw new RangeError("Went above 36 in genA "+base+','+used+','+min);
+    if (j >= 36) throw new RangeError("Went above 36 in genA "+base+','+used);
     out.push(j.toString(36));
     j++;
   }
@@ -90,12 +90,11 @@ function posNCD(input, ibase) {
   let base = ibase;
   base = Math.abs(base) | 0;
   input = input.toLowerCase();
-  let int = [];
   let output = 0;
   let mul = 1;
   for (let i = input.length-1; i >= 0; i--) {
     const idx = genA(base, input.slice(0, i)).indexOf(input[i]);
-    if (idx==-1) throw new TypeError('String '+input+' is not an NC'+ibase);
+    if (idx==-1) return NaN;
     output += idx * mul;
     mul *= base;
     base++;
@@ -104,25 +103,23 @@ function posNCD(input, ibase) {
 }
 
 async function main() {
-  // const eFFTContainer = document.getElementById('fft-container');
   /** @type HTMLCanvasElement */
   const eFFT = document.getElementById('fft');
   const ctx = eFFT.getContext('2d');
-  /** @type HTMLSelectElement */
-  // const ePreference = document.getElementById('preference');
   /** @type HTMLInputElement */
   const eTVToggle = document.getElementById('tvtoggle');
   /** @type HTMLDialogElement */
   const eHelp = document.getElementById('help');
   const eStart = document.getElementById('start');
-  const eStatus = document.getElementById('status');
+  const eSync = document.getElementById('sync');
+  const eIDSpot = document.getElementById('idspot');
+  const eTimeIndex = document.getElementById('timeindex');
   const eDecoder = document.getElementById('decoder');
   const eDecoded = document.getElementById('decoded');
   const eHistory = document.getElementById('history');
   const eCopy = document.getElementById('copyid');
   let row = 0;
   let timer = 0;
-  let timer2 = 0;
   let tick = 0;
   let tick2 = 0;
   let syncCounter = 0, hasSync = false;
@@ -172,7 +169,7 @@ async function main() {
     //   await audioContext.audioWorklet.addModule(URL.createObjectURL(workletBlob));
     // } catch (e) {
     //   console.error(e);
-    //   eStatus.innerText = "Failed to load worklet. The packed version doesn't work on Chromium, only Firefox";
+    //   alert("Failed to load worklet. The packed version doesn't work on Chromium, only Firefox");
     //   return;
     // }
     await audioContext.audioWorklet.addModule("./audio.js");
@@ -250,7 +247,7 @@ async function main() {
         else if (symbol == 17) {
           if (tick2 == 8) {
             if (tick < 10 || !hasSync) {
-              if (lastFullMajorityDecode == null) eStatus.innerText = "Got sync...";
+              if (lastFullMajorityDecode == null) eSync.classList.add('on');
               clearPrev();
               while (eHistory.children.length > 0) {
                 eHistory.removeChild(eHistory.children.item(eHistory.children.length - 1));
@@ -262,10 +259,10 @@ async function main() {
             tick = 11;
             syncCounter = 4;
             hasSync = true;
-          } else if (tick === 11) syncCounter++;
+          } else if (tick > 10) syncCounter++;
         }
         decoded[tick] = symbol;
-        if (tick >= 11) {
+        if (tick > 10) {
           if(!avoidPreSyncPrint) {
             prev.pop();
             prev.unshift(decoded.slice());
@@ -273,46 +270,51 @@ async function main() {
           }
           if (--syncCounter <= 0 && hasSync) {
             hasSync = false;
-            if(lastFullMajorityDecode==null) eStatus.innerText = "Lost sync...";
+            if(lastFullMajorityDecode==null) eSync.classList.remove('on');
             addRow('( Lost sync )', map);
           }
         }
         let rawHTML = '';
+        let rawText = '';
         let majorityHTML = '';
         let majorityText = '';
-        let majoritySymbols = 0;
+        // let majoritySymbols = 0;
         for (let i1 = 0; i1 < 12; i1++) {
           let patterns = Array(18).fill(0);
           for (let i2 = 0; i2 < 5; i2++) {
             patterns[prev[i2][i1]]++;
           }
-          const cur = i1 == (tick+1)%12 ? 'b' : 'span';
+          const cur = i1 == (tick + 1) % 12 ? 'b' : 'span';
           let pmax = Math.max(...patterns);
           if (pmax < 3) {
+            rawText += map2[decoded[i1]];
             rawHTML += `<${cur} class="r">${map2[decoded[i1]]}</${cur}>`;
             majorityText += map2[decoded[i1]];
-            majorityHTML += '<b class="r">?</b>';
+            majorityHTML += '<span class="gr">?</span>';
           } else {
-            if (i1 != 3 && i1 != 11) majoritySymbols++;
-            rawHTML += `<${cur} class="${decoded[i1]==patterns.indexOf(pmax)?"g":"y"}">${map2[decoded[i1]]}</${cur}>`;
+            // if (i1 != 3 && i1 != 11) majoritySymbols++;
+            rawText += map2[decoded[i1]];
+            rawHTML += `<${cur} class="${decoded[i1] == patterns.indexOf(pmax) ? "g" : "y"}">${map2[decoded[i1]]}</${cur}>`;
             majorityText += map2[patterns.indexOf(pmax)];
             majorityHTML += `<b class="g">${map2[patterns.indexOf(pmax)]}</b>`;
           }
-          if (majoritySymbols >= 10 && hasSync &&tick==11) {
-            lastFullMajorityDecode = majorityText;
-            let timeIndex = 'invalid';
-            try {
-              timeIndex = posNCD(majorityText.slice(7, 11), 13);
-            } catch (e) { console.warning(e); }
-            const h = `<span class="${timeIndex=='invalid'?'y':'g'}">ID ${majorityText.slice(0, 3) + majorityText.slice(4, 7)}<br>Time index ${timeIndex}</span>`;
-            if(eStatus.innerHTML!==h) eStatus.innerHTML = h;
-            eCopy.disabled = false; // show button
+          if (tick > 10) {
+            const firsthalf = posNCD(rawText.slice(0, 3), 14);
+            if (firsthalf != NaN) {
+              const shift0 = parseInt(rawText[4], 16) - parseInt(rawText[0], 16) & 15;
+              const shift1 = parseInt(rawText[5], 16) - parseInt(rawText[1], 16) & 15;
+              const shift2 = parseInt(rawText[6], 16) - parseInt(rawText[2], 16) & 15;
+              if (shift0 === shift1 && shift1 === shift2 && shift2 !== 0) {
+                eIDSpot.innerText = `${firsthalf}${['N', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'XIV', 'XV'][shift0] ?? 'U'} (${rawText.slice(0, 3)}${rawText.slice(4, 7)})`;
+                eTimeIndex.innerText = posNCD(rawText.slice(7, 11), 13);
+              }
+            }
+            eDecoded.innerHTML = majorityHTML;
           }
         }
         eDecoder.innerHTML = rawHTML;
-        eDecoded.innerHTML = majorityHTML;
         row++
-        if (tick == 11&&hasSync) row++;
+        if (tick > 10&&hasSync) row++;
         row = row % eFFT.height;
         tick = (tick + 1) % 12;
         tick2++;
@@ -322,20 +324,13 @@ async function main() {
       }
       timer = (timer + 1) % 8;
       lastSymbol = symbol;
-      // console.log(map2[]);
     });
     eTVToggle.addEventListener('change', function () {
       // processor.port.postMessage({ 'tvToggle': eTVToggle.checked });
       processor.port.postMessage({ 'tvToggle': +eTVToggle.value });
     });
     processor.port.start();
-    // const osc = audioContext.createOscillator();
-    // osc.type = 'sine';
-    // osc.frequency.setValueAtTime(1000, audioContext.currentTime);
-    // osc.connect(processor);
-    // osc.start();
     processor.connect(audioContext.destination);
-    eStatus.innerText = "Looking for sync...";
     audioContext.resume();
   }, { once: true });
 
